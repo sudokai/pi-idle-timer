@@ -19,7 +19,7 @@ Shows **time since the agent last settled** in the pi footer status bar.
 ## Install
 
 ```bash
-pi install git:github.com/<you>/pi-idle-timer
+pi install git:github.com/sudokai/pi-idle-timer
 ```
 
 Local development:
