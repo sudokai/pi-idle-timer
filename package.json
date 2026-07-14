@@ -1,0 +1,16 @@
+{
+  "name": "pi-idle-timer",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Status-bar idle timer: time since the agent finished its last response",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/format-idle-seconds.test.ts"
+  }
+}
