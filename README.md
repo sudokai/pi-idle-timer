@@ -1,14 +1,18 @@
 # pi-idle-timer
 
-Shows **time since the agent last settled** in the pi footer status bar.
+Shows **time since the latest assistant message finished** in the pi footer status bar.
 
 ## Behavior
 
 | State | Status bar |
 |-------|------------|
-| Fresh session (no agent run yet) | hidden |
-| Agent working | hidden |
-| Agent idle (settled) | live timer, updates every 1s |
+| Fresh session (no assistant response yet) | hidden |
+| Assistant response generating | hidden |
+| Assistant message finished | live timer, updates every 1s |
+| Tool execution after an assistant message | timer continues |
+
+The timer resets after every completed assistant message, including intermediate
+messages in tool-use loops.
 
 **Format** (dim):
 

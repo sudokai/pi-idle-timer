@@ -1,7 +1,7 @@
 /**
  * Idle Timer Extension
  *
- * Shows time since the agent last settled in the footer status bar.
+ * Shows time since the latest assistant message finished in the footer status bar.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -24,31 +24,31 @@ export function formatIdleSeconds(totalSeconds: number): string {
 
 export default function (pi: ExtensionAPI) {
 	let timer: ReturnType<typeof setInterval> | null = null;
-	let settledAt: number | null = null;
+	let messageEndedAt: number | null = null;
 
 	function stopTimer(ctx: ExtensionContext) {
 		if (timer) {
 			clearInterval(timer);
 			timer = null;
 		}
-		settledAt = null;
+		messageEndedAt = null;
 		if (ctx.hasUI) {
 			ctx.ui.setStatus(STATUS_KEY, undefined);
 		}
 	}
 
 	function updateStatus(ctx: ExtensionContext) {
-		if (!ctx.hasUI || settledAt === null) {
+		if (!ctx.hasUI || messageEndedAt === null) {
 			return;
 		}
-		const elapsedSec = Math.floor((Date.now() - settledAt) / 1000);
+		const elapsedSec = Math.floor((Date.now() - messageEndedAt) / 1000);
 		const text = formatIdleSeconds(elapsedSec);
 		ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", text));
 	}
 
 	function startTimer(ctx: ExtensionContext) {
 		stopTimer(ctx);
-		settledAt = Date.now();
+		messageEndedAt = Date.now();
 		updateStatus(ctx);
 		timer = setInterval(() => {
 			updateStatus(ctx);
@@ -59,11 +59,16 @@ export default function (pi: ExtensionAPI) {
 		stopTimer(ctx);
 	});
 
-	pi.on("agent_settled", async (_event, ctx) => {
-		if (!ctx.hasUI || !ctx.isIdle()) {
-			return;
+	pi.on("message_start", async (event, ctx) => {
+		if (event.message.role === "assistant") {
+			stopTimer(ctx);
 		}
-		startTimer(ctx);
+	});
+
+	pi.on("message_end", async (event, ctx) => {
+		if (event.message.role === "assistant" && ctx.hasUI) {
+			startTimer(ctx);
+		}
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
