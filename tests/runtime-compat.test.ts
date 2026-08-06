@@ -37,7 +37,6 @@ async function loadExtension(root: string) {
 	const { createJiti } = await import(pathToFileURL(path.join(root, "node_modules/jiti/lib/jiti-static.mjs")).href);
 	const aliases = {
 		"@earendil-works/pi-coding-agent": path.join(root, "dist/index.js"),
-		"@earendil-works/pi-tui": path.join(root, "node_modules/@earendil-works/pi-tui/dist/index.js"),
 	};
 	const jiti = createJiti(import.meta.url, { moduleCache: false, alias: aliases });
 	return jiti.import(EXT_PATH, { default: true });
@@ -46,38 +45,31 @@ async function loadExtension(root: string) {
 function makeMockPi() {
 	const handlers = new Map();
 	const statuses = new Map();
-	let footerFactory;
+	const widgets = new Map();
+	let widgetOptions = undefined;
 	const ui = {
 		setStatus(key: string, text: string | undefined) {
 			if (text === undefined) statuses.delete(key);
 			else statuses.set(key, text);
 		},
-		setFooter(factory: unknown) {
-			footerFactory = factory;
+		setWidget(key: string, content: string[] | undefined, options?: { placement?: string }) {
+			widgetOptions = options;
+			if (content === undefined) widgets.delete(key);
+			else widgets.set(key, content);
 		},
 		theme: { fg: (_style: string, text: string) => text },
 	};
 	return {
 		handlers,
 		statuses,
+		widgets,
 		ui,
-		get footerFactory() {
-			return footerFactory;
+		get widgetOptions() {
+			return widgetOptions;
 		},
 		pi: { on: (event: string, handler: unknown) => handlers.set(event, handler) },
 		ctx: { hasUI: true, ui },
 	};
-}
-
-function footerLines(mock: ReturnType<typeof makeMockPi>, statusTexts: string[]) {
-	const factory = mock.footerFactory;
-	assert.equal(typeof factory, "function", "expected a custom footer to be installed");
-	const footerData = {
-		getExtensionStatuses: () => new Map(statusTexts.map((t, i) => [`k${i}`, t])),
-		onBranchChange: () => () => {},
-	};
-	const component = factory({ requestRender() {} }, { fg: (_s: string, t: string) => t }, footerData);
-	return component.render(200) as string[];
 }
 
 for (const rt of RUN_TIMES) {
@@ -102,6 +94,7 @@ for (const rt of RUN_TIMES) {
 
 			// Fresh session: hidden
 			assert.equal(mock.statuses.size, 0);
+			assert.equal(mock.widgets.size, 0);
 
 			// Control the clock for deterministic elapsed-time assertions
 			const realNow = Date.now;
@@ -113,39 +106,54 @@ for (const rt of RUN_TIMES) {
 				// Assistant message starts -> still hidden
 				await h("message_start")({ message: { role: "assistant" } }, mock.ctx);
 				assert.equal(mock.statuses.size, 0);
+				assert.equal(mock.widgets.size, 0);
 
 				// Assistant message finishes -> timer starts at idle 0s
 				await h("message_end")({ message: { role: "assistant" } }, mock.ctx);
-				assert.equal(mock.statuses.get("idle-timer"), "idle 0s");
-
-				// Footer: prime-agent installs a statuses footer; pi does not
 				if (rt.prime) {
-					const lines = footerLines(mock, [mock.statuses.get("idle-timer") ?? ""]);
-					assert.ok(lines[0]?.includes("idle 0s"), `footer should render the timer, got ${lines}`);
+					// prime-agent: rendered as a below-editor widget (daemon-safe channel)
+					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 0s"]);
+					assert.equal(mock.widgetOptions?.placement, "belowEditor");
+					assert.equal(mock.statuses.size, 0, "prime-agent must not rely on footer statuses");
 				} else {
-					assert.equal(mock.footerFactory, undefined, "pi must keep its built-in footer");
+					// pi: rendered in the built-in footer via setStatus
+					assert.equal(mock.statuses.get("idle-timer"), "idle 0s");
+					assert.equal(mock.widgets.size, 0, "pi must keep its built-in footer");
 				}
 
 				// Ticking: advance the clock, let the 1s interval fire
 				now += 5000;
 				await new Promise((r) => setTimeout(r, 1100));
-				assert.equal(mock.statuses.get("idle-timer"), "idle 5s");
+				if (rt.prime) {
+					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 5s"]);
+				} else {
+					assert.equal(mock.statuses.get("idle-timer"), "idle 5s");
+				}
 
 				// Next turn starts -> hidden again
 				await h("agent_start")({}, mock.ctx);
 				assert.equal(mock.statuses.size, 0);
+				assert.equal(mock.widgets.size, 0);
 
 				// Long idle formatting via a fresh message_end after 61s
 				await h("message_end")({ message: { role: "assistant" } }, mock.ctx);
-				assert.equal(mock.statuses.get("idle-timer"), "idle 0s");
+				if (rt.prime) {
+					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 0s"]);
+				} else {
+					assert.equal(mock.statuses.get("idle-timer"), "idle 0s");
+				}
 				now += 61_000;
 				await new Promise((r) => setTimeout(r, 1100));
-				assert.equal(mock.statuses.get("idle-timer"), "idle 1m 01s");
+				if (rt.prime) {
+					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 1m 01s"]);
+				} else {
+					assert.equal(mock.statuses.get("idle-timer"), "idle 1m 01s");
+				}
 
-				// Shutdown: timer cleared, footer removed
+				// Shutdown: timer cleared everywhere
 				await h("session_shutdown")({}, mock.ctx);
 				assert.equal(mock.statuses.size, 0);
-				assert.equal(mock.footerFactory, undefined);
+				assert.equal(mock.widgets.size, 0);
 			} finally {
 				Date.now = realNow;
 			}

@@ -1,6 +1,6 @@
 {
   "name": "pi-idle-timer",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "type": "module",
   "description": "Status-bar idle timer for pi and prime-agent: time since the agent finished its last response",
   "keywords": [
@@ -15,8 +15,7 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "scripts": {
     "test": "node --experimental-strip-types --test tests/format-idle-seconds.test.ts tests/runtime-compat.test.ts"

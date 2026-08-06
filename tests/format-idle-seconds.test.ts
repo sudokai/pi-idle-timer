@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatIdleSeconds } from "../extensions/format-idle-seconds.ts";
+import { formatIdleSeconds } from "../extensions/lib/format-idle-seconds.ts";
 
 describe("formatIdleSeconds", () => {
 	const cases: Array<[number, string]> = [
