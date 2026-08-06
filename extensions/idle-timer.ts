@@ -93,7 +93,11 @@ export default function (pi: ExtensionAPI) {
 				const themesDir = join(AGENT_DIR, "themes");
 				mutedLine = (t) => mutedWidgetLine(t, themeName, COLOR_MODE, themesDir);
 			}
-			ctx.ui.setWidget(STATUS_KEY, [mutedLine(text)], { placement: "belowEditor" });
+			// A trailing "\n" adds a blank row of bottom margin so the timer
+			// doesn't sit flush against the terminal's last row. The TUI renders
+			// each widget string through wrapTextWithAnsi, which keeps the empty
+			// line after the newline (whitespace-only array entries are dropped).
+			ctx.ui.setWidget(STATUS_KEY, [mutedLine(text) + "\n"], { placement: "belowEditor" });
 		} else {
 			ctx.ui.setStatus(STATUS_KEY, dimText(ctx, text));
 		}

@@ -73,14 +73,16 @@ function makeMockPi() {
 }
 
 // The prime-agent widget line is ANSI-styled with the theme's muted color
-// (e.g. "\x1b[38;2;161;161;170midle 0s\x1b[39m"), so assert on the text and
-// the color envelope rather than the exact string.
+// (e.g. "\x1b[38;2;161;161;170midle 0s\x1b[39m\n") and carries a trailing
+// newline so the TUI renders a blank row of bottom margin after the timer.
+// Assert on the text, the color envelope, and the spacing newline rather
+// than the exact string.
 function assertWidgetLine(mock: ReturnType<typeof makeMockPi>, key: string, expectedText: string) {
 	const lines = mock.widgets.get(key);
 	assert.ok(Array.isArray(lines) && lines.length === 1, `expected a widget line for ${key}`);
 	const line = lines[0];
 	assert.ok(line.startsWith("\x1b[38;"), `widget line must be ANSI-colored, got ${JSON.stringify(line)}`);
-	assert.ok(line.endsWith("\x1b[39m"), "widget line must reset the foreground color");
+	assert.ok(line.endsWith("\x1b[39m\n"), "widget line must reset the foreground color and end with the bottom-margin newline");
 	assert.ok(line.includes(expectedText), `widget line should contain ${JSON.stringify(expectedText)}, got ${JSON.stringify(line)}`);
 }
 
