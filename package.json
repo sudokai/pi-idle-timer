@@ -18,6 +18,6 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/format-idle-seconds.test.ts tests/runtime-compat.test.ts"
+    "test": "node --experimental-strip-types --test tests/format-idle-seconds.test.ts tests/widget-color.test.ts tests/runtime-compat.test.ts"
   }
 }

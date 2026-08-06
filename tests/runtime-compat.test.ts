@@ -72,6 +72,18 @@ function makeMockPi() {
 	};
 }
 
+// The prime-agent widget line is ANSI-styled with the theme's muted color
+// (e.g. "\x1b[38;2;161;161;170midle 0s\x1b[39m"), so assert on the text and
+// the color envelope rather than the exact string.
+function assertWidgetLine(mock: ReturnType<typeof makeMockPi>, key: string, expectedText: string) {
+	const lines = mock.widgets.get(key);
+	assert.ok(Array.isArray(lines) && lines.length === 1, `expected a widget line for ${key}`);
+	const line = lines[0];
+	assert.ok(line.startsWith("\x1b[38;"), `widget line must be ANSI-colored, got ${JSON.stringify(line)}`);
+	assert.ok(line.endsWith("\x1b[39m"), "widget line must reset the foreground color");
+	assert.ok(line.includes(expectedText), `widget line should contain ${JSON.stringify(expectedText)}, got ${JSON.stringify(line)}`);
+}
+
 for (const rt of RUN_TIMES) {
 	describe(`extension under ${rt.name} runtime`, () => {
 		it("loads, detects the host, and drives the idle timer", async (t) => {
@@ -112,7 +124,7 @@ for (const rt of RUN_TIMES) {
 				await h("message_end")({ message: { role: "assistant" } }, mock.ctx);
 				if (rt.prime) {
 					// prime-agent: rendered as a below-editor widget (daemon-safe channel)
-					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 0s"]);
+					assertWidgetLine(mock, "idle-timer", "idle 0s");
 					assert.equal(mock.widgetOptions?.placement, "belowEditor");
 					assert.equal(mock.statuses.size, 0, "prime-agent must not rely on footer statuses");
 				} else {
@@ -125,7 +137,7 @@ for (const rt of RUN_TIMES) {
 				now += 5000;
 				await new Promise((r) => setTimeout(r, 1100));
 				if (rt.prime) {
-					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 5s"]);
+					assertWidgetLine(mock, "idle-timer", "idle 5s");
 				} else {
 					assert.equal(mock.statuses.get("idle-timer"), "idle 5s");
 				}
@@ -138,14 +150,14 @@ for (const rt of RUN_TIMES) {
 				// Long idle formatting via a fresh message_end after 61s
 				await h("message_end")({ message: { role: "assistant" } }, mock.ctx);
 				if (rt.prime) {
-					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 0s"]);
+					assertWidgetLine(mock, "idle-timer", "idle 0s");
 				} else {
 					assert.equal(mock.statuses.get("idle-timer"), "idle 0s");
 				}
 				now += 61_000;
 				await new Promise((r) => setTimeout(r, 1100));
 				if (rt.prime) {
-					assert.deepEqual(mock.widgets.get("idle-timer"), ["idle 1m 01s"]);
+					assertWidgetLine(mock, "idle-timer", "idle 1m 01s");
 				} else {
 					assert.equal(mock.statuses.get("idle-timer"), "idle 1m 01s");
 				}

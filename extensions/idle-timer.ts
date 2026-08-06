@@ -13,16 +13,21 @@
  *   ctx.ui.theme is not initialized, so neither a custom footer nor themed
  *   status text can work. The channel that does cross the daemon boundary is
  *   ctx.ui.setWidget() with plain string lines, which the TUI renders below
- *   the editor — a footer-adjacent status row. This extension uses that.
+ *   the editor — a footer-adjacent status row. Because the lines are plain
+ *   strings, the theme's muted color is embedded as an ANSI foreground
+ *   sequence (the same escape the TUI itself emits).
  *
  * The host is detected by inspecting the host's @earendil-works/pi-coding-agent
  * package: prime-agent (the pi fork with the IPython tool) exports symbols
  * that pi does not. Override with PI_IDLE_TIMER_WIDGET=1|0 if needed.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import * as pa from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { formatIdleSeconds } from "./lib/format-idle-seconds.ts";
+import { detectColorMode, mutedWidgetLine, readThemeName } from "./lib/widget-color.ts";
 
 const STATUS_KEY = "idle-timer";
 
@@ -33,6 +38,14 @@ const IS_PRIME_AGENT =
 const WIDGET_OVERRIDE = process.env.PI_IDLE_TIMER_WIDGET;
 const SHOULD_USE_WIDGET =
 	WIDGET_OVERRIDE === "1" || (WIDGET_OVERRIDE === undefined && IS_PRIME_AGENT);
+
+// prime-agent's user dir (agentDir/settings.json + agentDir/themes). The
+// extension cannot import prime-agent's config module, so this mirrors the
+// default CONFIG_DIR_NAME (".prime/agent") under the user's home.
+const AGENT_DIR = join(homedir(), ".prime", "agent");
+// Captured at module load: prime-agent restores the client's env while
+// loading extensions, so COLORTERM/TERM here describe the TUI's terminal.
+const COLOR_MODE = detectColorMode(process.env);
 
 /**
  * Apply the theme's dim style when the theme is available. Prime-agent daemon
@@ -62,15 +75,25 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	// The muted widget line is resolved lazily (first timer display) and
+	// cached: the theme name comes from prime-agent's settings.json, which the
+	// daemon worker cannot reach through ctx.
+	let mutedLine: ((text: string) => string) | null = null;
+
 	function setStatusText(ctx: ExtensionContext, text: string) {
 		if (!ctx.hasUI) {
 			return;
 		}
 		if (SHOULD_USE_WIDGET) {
-			// Widgets cross the daemon boundary as plain string arrays, so they
-			// cannot carry theme styling. Rendered just below the editor, in the
-			// row the empty built-in footer would occupy.
-			ctx.ui.setWidget(STATUS_KEY, [text], { placement: "belowEditor" });
+			// Widget lines cross the daemon boundary as plain strings, so the
+			// muted color is embedded as ANSI. Rendered just below the editor,
+			// in the row the empty built-in footer would occupy.
+			if (mutedLine === null) {
+				const themeName = readThemeName(AGENT_DIR);
+				const themesDir = join(AGENT_DIR, "themes");
+				mutedLine = (t) => mutedWidgetLine(t, themeName, COLOR_MODE, themesDir);
+			}
+			ctx.ui.setWidget(STATUS_KEY, [mutedLine(text)], { placement: "belowEditor" });
 		} else {
 			ctx.ui.setStatus(STATUS_KEY, dimText(ctx, text));
 		}

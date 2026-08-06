@@ -22,16 +22,17 @@ messages in tool-use loops.
 - Under 1 hour: `idle 3m 05s`
 - 1 hour or more: `idle 1h 02m`
 
-On pi the status is rendered dim in the built-in footer; on prime-agent the
-widget row is unthemed (plain text — widget lines cross the daemon as strings
-and cannot carry theme styling).
+On pi the status is rendered dim in the built-in footer. On prime-agent the
+widget row is rendered in the theme's **muted** color (the same shade as
+secondary TUI text like the agent/session line), resolved from the active
+theme's `colors.muted` and embedded as an ANSI foreground sequence.
 
 ## How it works on each runtime
 
 | Runtime | Rendering |
 |---------|-----------|
 | **pi** | The built-in footer already renders extension statuses (pwd, tokens, cost, context %, model, status line). The extension calls `ctx.ui.setStatus()`, so pi's footer stays intact. |
-| **prime-agent** | The built-in footer is **intentionally empty** (telemetry hidden by default), so `setStatus()` alone is invisible. Worse, the TUI usually runs against the shared daemon, where extension events execute in a worker process: there `ctx.ui.setFooter()` is a no-op and `ctx.ui.theme` is uninitialized (it throws). The channel that does cross the daemon boundary is `ctx.ui.setWidget()` with plain string lines, so the extension renders the timer as a one-line widget **below the editor** — the row the empty footer would occupy. |
+| **prime-agent** | The built-in footer is **intentionally empty** (telemetry hidden by default), so `setStatus()` alone is invisible. Worse, the TUI usually runs against the shared daemon, where extension events execute in a worker process: there `ctx.ui.setFooter()` is a no-op and `ctx.ui.theme` is uninitialized (it throws). The channel that does cross the daemon boundary is `ctx.ui.setWidget()` with plain string lines, so the extension renders the timer as a one-line widget **below the editor** — the row the empty footer would occupy. The line is styled with the theme's **muted** foreground color by embedding the ANSI escape the TUI itself would emit. |
 
 The host is detected by inspecting the host's `@earendil-works/pi-coding-agent`
 package: prime-agent exports IPython-tool symbols (`isIpythonToolResult`,
