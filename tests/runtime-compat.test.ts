@@ -42,12 +42,33 @@ async function loadExtension(root: string) {
 	return jiti.import(EXT_PATH, { default: true });
 }
 
-function makeMockPi() {
-	const handlers = new Map();
-	const statuses = new Map();
-	const widgets = new Map();
-	let widgetOptions = undefined;
-	const ui = {
+interface MockUi {
+	setStatus(key: string, text: string | undefined): void;
+	setWidget(key: string, content: string[] | undefined, options?: { placement?: string }): void;
+	theme: { fg(style: string, text: string): string };
+}
+
+interface MockContext {
+	hasUI: boolean;
+	ui: MockUi;
+}
+
+interface MockPi {
+	handlers: Map<string, (event: unknown, ctx: MockContext) => Promise<void>>;
+	statuses: Map<string, string>;
+	widgets: Map<string, string[]>;
+	ui: MockUi;
+	widgetOptions: { placement?: string } | undefined;
+	pi: { on(event: string, handler: (event: unknown, ctx: MockContext) => Promise<void>): void };
+	ctx: MockContext;
+}
+
+function makeMockPi(): MockPi {
+	const handlers = new Map<string, (event: unknown, ctx: MockContext) => Promise<void>>();
+	const statuses = new Map<string, string>();
+	const widgets = new Map<string, string[]>();
+	let widgetOptions: { placement?: string } | undefined;
+	const ui: MockUi = {
 		setStatus(key: string, text: string | undefined) {
 			if (text === undefined) statuses.delete(key);
 			else statuses.set(key, text);
@@ -67,23 +88,25 @@ function makeMockPi() {
 		get widgetOptions() {
 			return widgetOptions;
 		},
-		pi: { on: (event: string, handler: unknown) => handlers.set(event, handler) },
+		pi: { on: (event, handler) => void handlers.set(event, handler) },
 		ctx: { hasUI: true, ui },
 	};
 }
 
 // The prime-agent widget line is ANSI-styled with the theme's muted color
-// (e.g. "\x1b[38;2;161;161;170midle 0s\x1b[39m\n") and carries a trailing
+// (e.g. "\x1b[38;2;161;161;170m idle 0s\x1b[39m\n") and carries a trailing
 // newline so the TUI renders a blank row of bottom margin after the timer.
 // Assert on the text, the color envelope, and the spacing newline rather
 // than the exact string.
-function assertWidgetLine(mock: ReturnType<typeof makeMockPi>, key: string, expectedText: string) {
+function assertWidgetLine(mock: MockPi, key: string, expectedText: string) {
 	const lines = mock.widgets.get(key);
 	assert.ok(Array.isArray(lines) && lines.length === 1, `expected a widget line for ${key}`);
 	const line = lines[0];
 	assert.ok(line.startsWith("\x1b[38;"), `widget line must be ANSI-colored, got ${JSON.stringify(line)}`);
 	assert.ok(line.endsWith("\x1b[39m\n"), "widget line must reset the foreground color and end with the bottom-margin newline");
 	assert.ok(line.includes(expectedText), `widget line should contain ${JSON.stringify(expectedText)}, got ${JSON.stringify(line)}`);
+	const visible = line.replace(/\x1b\[[0-9;]*m/g, "").replace(/\n$/, "");
+	assert.equal(visible, ` ${expectedText}`, "widget line must share omp's one-space HUD gutter");
 }
 
 for (const rt of RUN_TIMES) {

@@ -25,7 +25,8 @@ messages in tool-use loops.
 On pi the status is rendered dim in the built-in footer. On prime-agent the
 widget row is rendered in the theme's **muted** color (the same shade as
 secondary TUI text like the agent/session line), resolved from the active
-theme's `colors.muted` and embedded as an ANSI foreground sequence.
+theme's `colors.muted` and embedded as an ANSI foreground sequence. The timer
+also uses the one-cell left gutter used by omp's native child HUD rows.
 
 ## How it works on each runtime
 

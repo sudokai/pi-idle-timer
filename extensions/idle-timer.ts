@@ -30,6 +30,9 @@ import { formatIdleSeconds } from "./lib/format-idle-seconds.ts";
 import { detectColorMode, mutedWidgetLine, readThemeName } from "./lib/widget-color.ts";
 
 const STATUS_KEY = "idle-timer";
+// omp's native HUD prefixes child/tree rows with one space after Text's
+// normal left padding. Match that gutter for the below-editor timer widget.
+const WIDGET_LEFT_GUTTER = " ";
 
 const HOST = pa as Record<string, unknown>;
 const IS_PRIME_AGENT =
@@ -97,7 +100,7 @@ export default function (pi: ExtensionAPI) {
 			// doesn't sit flush against the terminal's last row. The TUI renders
 			// each widget string through wrapTextWithAnsi, which keeps the empty
 			// line after the newline (whitespace-only array entries are dropped).
-			ctx.ui.setWidget(STATUS_KEY, [mutedLine(text) + "\n"], { placement: "belowEditor" });
+			ctx.ui.setWidget(STATUS_KEY, [mutedLine(WIDGET_LEFT_GUTTER + text) + "\n"], { placement: "belowEditor" });
 		} else {
 			ctx.ui.setStatus(STATUS_KEY, dimText(ctx, text));
 		}
