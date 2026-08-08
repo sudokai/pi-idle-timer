@@ -1,13 +1,39 @@
 # Implementation notes: scrollback-safe idle status
 
-## Decisions
-- **Use a static "idle since" timestamp instead of a ticking elapsed counter** — pi's `setStatus()` unconditionally requests a full TUI render, so any recurring update can interrupt native terminal scrollback. Alternatives considered: slower polling (still interrupts scrollback) and replacing pi's footer (too invasive and duplicates core UI).
-- **Keep dual-runtime compatibility (pi + prime-agent).** pi's built-in footer renders extension statuses (line 3 of the footer: pwd / tokens+cost+context+model / statuses), so pi only needs `ctx.ui.setStatus()`. prime-agent's built-in footer is intentionally empty (`render()` returns `[]` — "prime brand TUI" hides telemetry by default), so `setStatus()` alone is invisible there.
-- **prime-agent: render a below-editor widget instead of a footer.** The original prime-agent support installed a custom footer via `ctx.ui.setFooter()`, which worked in the mock loader test but not in the real runtime: the prime-agent TUI normally runs against the shared daemon, and extension events execute in a **daemon worker process** where (a) `ctx.ui.setFooter()` is a literal no-op (`setFooter: () => {}` in `modes/daemon/daemon-extension-binding.js`) and (b) `ctx.ui.theme` throws "Theme not initialized" because `initTheme()` only runs in the TUI process. Verified live under tmux: the custom footer never rendered and the `message_end` handler crashed on `theme.fg()`. The one UI channel that genuinely crosses the daemon boundary is `ctx.ui.setWidget()` with **plain string lines** (the daemon forwards string-array widgets over `extension_ui_request`; it silently drops component factories), so the extension renders `idle …` as a one-line widget with `placement: "belowEditor"` — the row just under the editor/subagent line, where the empty footer would be. Verified live: the widget appears, ticks every second, and clears on the next `agent_start`. The widget string ends with a `\n` so the TUI's `Text` component (which drops whitespace-only array entries but keeps the empty line after a trailing newline via `wrapTextWithAnsi`) renders a blank row of bottom margin — the widget is the last content row, so without it the timer sits flush against the terminal's bottom edge.
-- **Style the widget with the theme's `muted` color via embedded ANSI.** Widget lines cross the daemon as strings and `ctx.ui.theme` throws in the worker, so `extensions/lib/widget-color.ts` resolves the active theme's `colors.muted` (built-in prime/dark/light hexes; custom themes read from `agentDir/themes/<name>.json`, resolving `$var` refs) and emits the same ANSI sequence prime-agent itself produces (`Theme.fg`): 24-bit `\x1b[38;2;R;G;Bm` in truecolor mode or `\x1b[38;5;Nm` in 256-color mode, reset with `\x1b[39m`. The theme name comes from `agentDir/settings.json` (the extension context exposes no settings/theme in the worker), the color depth from the client env captured at module load (prime-agent loads extensions under the client env, so `COLORTERM`/`TERM` describe the TUI's terminal). `rgbTo256` replicates pi-tui's algorithm (verified identical on samples). `mutedWidgetLine` is resolved lazily on first timer display and cached.
-- **Never touch `ctx.ui.theme` unguarded.** In daemon workers the theme proxy throws; `dimText()` wraps `ctx.ui.theme.fg("dim", …)` in try/catch and falls back to plain text (pi path only — pi runs single-process, so its dim footer style is unaffected).
-- **Detect the host from the host's own package.** Each runtime aliases `@earendil-works/pi-coding-agent` to its own build, so a namespace import plus `typeof` checks on prime-agent-only exports (`isIpythonToolResult`, `getPythonSkillRuntimeInfo`) identify the runtime without parsing `process.argv` (works for npm installs and Bun binaries). Override: `PI_IDLE_TIMER_WIDGET=1|0`.
-- **Split `formatIdleSeconds` into `extensions/lib/format-idle-seconds.ts`.** The extension module value-imports `@earendil-works/pi-coding-agent` (bundled by both runtimes), which plain `node --experimental-strip-types` cannot resolve outside a runtime. The pure formatter keeps the unit test dependency-free; the runtime-compat test loads the real module through each runtime's jiti loader. `@earendil-works/pi-tui` is no longer imported (the footer's truncation helpers were dropped with the footer approach).
+## Runtime behavior
 
-## Deviations
-- None.
+- Store the time when the latest assistant message ends. Update the displayed
+  duration once per second. Clear the timer when a new assistant turn starts or
+  the session shuts down.
+- Use `ctx.ui.setStatus()` on pi. Pi renders extension statuses in its built-in
+  footer.
+- Use a below-editor widget on omp. OMP's status renderer removes ANSI styling
+  and does not add the normal `Text` left gutter. OMP's widget renderer adds the
+  gutter and preserves the live theme color.
+- Use a below-editor widget on prime-agent. Its footer is empty, and extension
+  events can run in a daemon worker where `ctx.ui.setFooter()` is unavailable
+  and `ctx.ui.theme` is not initialized.
+
+## Color and layout
+
+- Render the OMP widget with `ctx.ui.theme.fg("muted", ...)`.
+- Render the prime-agent widget with an ANSI foreground sequence generated from
+  the active theme's `colors.muted`. Resolve the theme name from
+  `~/.prime/agent/settings.json` and custom theme files. Select truecolor or
+  256-color output from the terminal environment.
+- Add one explicit left gutter to prime-agent widget strings. OMP and pi widget
+  rows use the `Text` component's normal gutter.
+- Add a trailing newline to widget content so the timer has a blank bottom
+  margin.
+- Detect hosts from runtime-specific exports in
+  `@earendil-works/pi-coding-agent`: prime-agent exposes
+  `isIpythonToolResult` or `getPythonSkillRuntimeInfo`; omp exposes
+  `renderSubagentHudLines`. `PI_IDLE_TIMER_WIDGET=1|0` overrides detection.
+
+## Test structure
+
+- Keep `formatIdleSeconds` in `extensions/lib/format-idle-seconds.ts` so the
+  formatter tests do not load a runtime package.
+- Load the extension through pi and prime-agent's real jiti loaders in
+  `tests/runtime-compat.test.ts`. Exercise the full event lifecycle with a
+  deterministic clock.

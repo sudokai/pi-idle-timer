@@ -3,6 +3,7 @@
  * tested with plain node --experimental-strip-types.
  */
 
+/** Format elapsed idle time as a compact status string. */
 export function formatIdleSeconds(totalSeconds: number): string {
 	if (totalSeconds < 60) {
 		return `idle ${totalSeconds}s`;

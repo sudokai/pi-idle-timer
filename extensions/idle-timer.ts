@@ -3,10 +3,13 @@
  *
  * Shows time since the latest assistant message finished.
  *
- * Dual-runtime support (pi and prime-agent):
+ * Runtime support (pi, omp, and prime-agent):
  * - pi: the built-in footer already renders extension statuses alongside
  *   pwd/tokens/cost/context/model, so ctx.ui.setStatus() is all that is
  *   needed.
+ * - omp: the status renderer strips ANSI and does not add Text's left gutter.
+ *   The timer therefore uses a below-editor widget, where the live theme can
+ *   provide the muted color and Text supplies the normal one-cell gutter.
  * - prime-agent: the built-in footer is intentionally empty, and the TUI
  *   typically runs against the shared daemon, where extension events execute
  *   in a worker process. In that worker ctx.ui.setFooter() is a no-op and
@@ -18,8 +21,8 @@
  *   sequence (the same escape the TUI itself emits).
  *
  * The host is detected by inspecting the host's @earendil-works/pi-coding-agent
- * package: prime-agent (the pi fork with the IPython tool) exports symbols
- * that pi does not. Override with PI_IDLE_TIMER_WIDGET=1|0 if needed.
+ * package: prime-agent exports IPython-tool symbols, and omp exports its
+ * subagent HUD renderer. Override with PI_IDLE_TIMER_WIDGET=1|0 if needed.
  */
 
 import { homedir } from "node:os";
@@ -30,17 +33,18 @@ import { formatIdleSeconds } from "./lib/format-idle-seconds.ts";
 import { detectColorMode, mutedWidgetLine, readThemeName } from "./lib/widget-color.ts";
 
 const STATUS_KEY = "idle-timer";
-// omp's native HUD prefixes child/tree rows with one space after Text's
-// normal left padding. Match that gutter for the below-editor timer widget.
-const WIDGET_LEFT_GUTTER = " ";
-
 const HOST = pa as Record<string, unknown>;
 const IS_PRIME_AGENT =
 	typeof HOST.isIpythonToolResult === "function" ||
 	typeof HOST.getPythonSkillRuntimeInfo === "function";
+// omp exposes the subagent HUD renderer; its status renderer strips ANSI and
+// has no Text gutter, so use the widget channel for the timer there as well.
+const IS_OMP = typeof HOST.renderSubagentHudLines === "function";
+// Prime-agent widget strings bypass Text and require one explicit left gutter.
+const WIDGET_LEFT_GUTTER = " ";
 const WIDGET_OVERRIDE = process.env.PI_IDLE_TIMER_WIDGET;
 const SHOULD_USE_WIDGET =
-	WIDGET_OVERRIDE === "1" || (WIDGET_OVERRIDE === undefined && IS_PRIME_AGENT);
+	WIDGET_OVERRIDE === "1" || (WIDGET_OVERRIDE === undefined && (IS_PRIME_AGENT || IS_OMP));
 
 // prime-agent's user dir (agentDir/settings.json + agentDir/themes). The
 // extension cannot import prime-agent's config module, so this mirrors the
@@ -51,9 +55,8 @@ const AGENT_DIR = join(homedir(), ".prime", "agent");
 const COLOR_MODE = detectColorMode(process.env);
 
 /**
- * Apply the theme's dim style when the theme is available. Prime-agent daemon
- * workers never run initTheme(), so ctx.ui.theme throws there — fall back to
- * plain text instead of crashing the message_end handler.
+ * Apply the theme's dim style when available. Return plain text when the
+ * runtime does not initialize a theme.
  */
 function dimText(ctx: ExtensionContext, text: string): string {
 	try {
@@ -63,7 +66,8 @@ function dimText(ctx: ExtensionContext, text: string): string {
 	}
 }
 
-export default function (pi: ExtensionAPI) {
+/** Register idle timer lifecycle handlers for pi-compatible runtimes. */
+export default function idleTimerExtension(pi: ExtensionAPI) {
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let messageEndedAt: number | null = null;
 
@@ -78,9 +82,8 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	// The muted widget line is resolved lazily (first timer display) and
-	// cached: the theme name comes from prime-agent's settings.json, which the
-	// daemon worker cannot reach through ctx.
+	// The prime-agent widget line is resolved lazily and cached because its
+	// daemon worker cannot access ctx.ui.theme.
 	let mutedLine: ((text: string) => string) | null = null;
 
 	function setStatusText(ctx: ExtensionContext, text: string) {
@@ -88,19 +91,32 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		if (SHOULD_USE_WIDGET) {
-			// Widget lines cross the daemon boundary as plain strings, so the
-			// muted color is embedded as ANSI. Rendered just below the editor,
-			// in the row the empty built-in footer would occupy.
-			if (mutedLine === null) {
-				const themeName = readThemeName(AGENT_DIR);
-				const themesDir = join(AGENT_DIR, "themes");
-				mutedLine = (t) => mutedWidgetLine(t, themeName, COLOR_MODE, themesDir);
+			if (IS_OMP) {
+				// OMP's status renderer strips ANSI and has no Text gutter.
+				// Its widget renderer supplies the gutter and keeps this theme
+				// color sequence.
+				let line = text;
+				try {
+					line = ctx.ui.theme.fg("muted", text);
+				} catch {
+					// Keep the timer visible if the theme is unavailable.
+				}
+				ctx.ui.setWidget(STATUS_KEY, [line + "\n"], { placement: "belowEditor" });
+			} else {
+				// Widget lines cross the prime-agent daemon boundary as plain
+				// strings, so embed the theme's muted color as ANSI.
+				if (mutedLine === null) {
+					const themeName = readThemeName(AGENT_DIR);
+					const themesDir = join(AGENT_DIR, "themes");
+					mutedLine = (t) => mutedWidgetLine(t, themeName, COLOR_MODE, themesDir);
+				}
+				// A trailing "\n" adds a blank row of bottom margin.
+				ctx.ui.setWidget(
+					STATUS_KEY,
+					[mutedLine(WIDGET_LEFT_GUTTER + text) + "\n"],
+					{ placement: "belowEditor" },
+				);
 			}
-			// A trailing "\n" adds a blank row of bottom margin so the timer
-			// doesn't sit flush against the terminal's last row. The TUI renders
-			// each widget string through wrapTextWithAnsi, which keeps the empty
-			// line after the newline (whitespace-only array entries are dropped).
-			ctx.ui.setWidget(STATUS_KEY, [mutedLine(WIDGET_LEFT_GUTTER + text) + "\n"], { placement: "belowEditor" });
 		} else {
 			ctx.ui.setStatus(STATUS_KEY, dimText(ctx, text));
 		}
