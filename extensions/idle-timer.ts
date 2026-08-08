@@ -8,7 +8,7 @@
  *   pwd/tokens/cost/context/model, so ctx.ui.setStatus() is all that is
  *   needed.
  * - omp: the status renderer strips ANSI and does not add Text's left gutter.
- *   The timer therefore uses a below-editor widget, where the live theme can
+ *   The timer therefore uses an above-editor widget, where the live theme can
  *   provide the muted color and Text supplies the normal one-cell gutter.
  * - prime-agent: the built-in footer is intentionally empty, and the TUI
  *   typically runs against the shared daemon, where extension events execute
@@ -33,6 +33,7 @@ import { formatIdleSeconds } from "./lib/format-idle-seconds.ts";
 import { detectColorMode, mutedWidgetLine, readThemeName } from "./lib/widget-color.ts";
 
 const STATUS_KEY = "idle-timer";
+
 const HOST = pa as Record<string, unknown>;
 const IS_PRIME_AGENT =
 	typeof HOST.isIpythonToolResult === "function" ||
@@ -40,8 +41,6 @@ const IS_PRIME_AGENT =
 // omp exposes the subagent HUD renderer; its status renderer strips ANSI and
 // has no Text gutter, so use the widget channel for the timer there as well.
 const IS_OMP = typeof HOST.renderSubagentHudLines === "function";
-// Prime-agent widget strings bypass Text and require one explicit left gutter.
-const WIDGET_LEFT_GUTTER = " ";
 const WIDGET_OVERRIDE = process.env.PI_IDLE_TIMER_WIDGET;
 const SHOULD_USE_WIDGET =
 	WIDGET_OVERRIDE === "1" || (WIDGET_OVERRIDE === undefined && (IS_PRIME_AGENT || IS_OMP));
@@ -55,8 +54,9 @@ const AGENT_DIR = join(homedir(), ".prime", "agent");
 const COLOR_MODE = detectColorMode(process.env);
 
 /**
- * Apply the theme's dim style when available. Return plain text when the
- * runtime does not initialize a theme.
+ * Apply the theme's dim style when the theme is available. Prime-agent daemon
+ * workers never run initTheme(), so ctx.ui.theme throws there — fall back to
+ * plain text instead of crashing the message_end handler.
  */
 function dimText(ctx: ExtensionContext, text: string): string {
 	try {
@@ -66,8 +66,7 @@ function dimText(ctx: ExtensionContext, text: string): string {
 	}
 }
 
-/** Register idle timer lifecycle handlers for pi-compatible runtimes. */
-export default function idleTimerExtension(pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI) {
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let messageEndedAt: number | null = null;
 
@@ -82,8 +81,9 @@ export default function idleTimerExtension(pi: ExtensionAPI) {
 		}
 	}
 
-	// The prime-agent widget line is resolved lazily and cached because its
-	// daemon worker cannot access ctx.ui.theme.
+	// The muted widget line is resolved lazily (first timer display) and
+	// cached: the theme name comes from prime-agent's settings.json, which the
+	// daemon worker cannot reach through ctx.
 	let mutedLine: ((text: string) => string) | null = null;
 
 	function setStatusText(ctx: ExtensionContext, text: string) {
@@ -101,7 +101,7 @@ export default function idleTimerExtension(pi: ExtensionAPI) {
 				} catch {
 					// Keep the timer visible if the theme is unavailable.
 				}
-				ctx.ui.setWidget(STATUS_KEY, [line + "\n"], { placement: "belowEditor" });
+				ctx.ui.setWidget(STATUS_KEY, [line + "\n"], { placement: "aboveEditor" });
 			} else {
 				// Widget lines cross the prime-agent daemon boundary as plain
 				// strings, so embed the theme's muted color as ANSI.
@@ -110,12 +110,7 @@ export default function idleTimerExtension(pi: ExtensionAPI) {
 					const themesDir = join(AGENT_DIR, "themes");
 					mutedLine = (t) => mutedWidgetLine(t, themeName, COLOR_MODE, themesDir);
 				}
-				// A trailing "\n" adds a blank row of bottom margin.
-				ctx.ui.setWidget(
-					STATUS_KEY,
-					[mutedLine(WIDGET_LEFT_GUTTER + text) + "\n"],
-					{ placement: "belowEditor" },
-				);
+				ctx.ui.setWidget(STATUS_KEY, [mutedLine(text) + "\n"], { placement: "belowEditor" });
 			}
 		} else {
 			ctx.ui.setStatus(STATUS_KEY, dimText(ctx, text));

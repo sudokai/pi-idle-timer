@@ -24,15 +24,16 @@ messages in tool-use loops.
 
 On omp and prime-agent the timer uses a widget row in the theme's **muted**
 color (the same shade as secondary TUI text like the agent/session line). OMP
-gets its one-cell gutter from the `Text` component; prime-agent receives one
-explicit left gutter in the widget string.
+places the widget above the editor and gets its one-cell gutter from the `Text`
+component. The timer carries a trailing newline so the TUI renders a blank row
+of bottom margin after it.
 
 ## How it works on each runtime
 
 | Runtime | Rendering |
 |---------|-----------|
 | **pi** | The built-in footer already renders extension statuses (pwd, tokens, cost, context %, model, status line). The extension calls `ctx.ui.setStatus()`, so pi's footer stays intact. |
-| **omp** | OMP's status renderer strips ANSI styling and does not add Text's normal left gutter. The extension uses a below-editor widget, so OMP supplies the gutter and the live theme supplies the muted color. |
+| **omp** | OMP's status renderer strips ANSI styling and does not add Text's normal left gutter. The extension uses an above-editor widget, so OMP supplies the gutter and the live theme supplies the muted color. |
 | **prime-agent** | The built-in footer is **intentionally empty** (telemetry hidden by default), so `setStatus()` alone is invisible. Worse, the TUI usually runs against the shared daemon, where extension events execute in a worker process: there `ctx.ui.setFooter()` is a no-op and `ctx.ui.theme` is uninitialized (it throws). The channel that does cross the daemon boundary is `ctx.ui.setWidget()` with plain string lines, so the extension renders the timer as a one-line widget **below the editor** — the row the empty footer would occupy. The line is styled with the theme's **muted** foreground color by embedding the ANSI escape the TUI itself would emit, and carries a trailing newline so the TUI renders a blank row of bottom margin after the timer. |
 
 The host is detected by inspecting the host's `@earendil-works/pi-coding-agent`
@@ -42,22 +43,23 @@ detection with `PI_IDLE_TIMER_WIDGET=1` (always use the widget) or `=0` (never;
 fall back to `setStatus`).
 
 ## Install
+
 omp:
 
 ```bash
 omp plugin install git:github.com/sudokai/pi-idle-timer
 ```
 
-pi:
-
-```bash
-pi install git:github.com/sudokai/pi-idle-timer
-```
-
 prime-agent:
 
 ```bash
 prime-agent package install git:github.com/sudokai/pi-idle-timer
+```
+
+pi:
+
+```bash
+pi install git:github.com/sudokai/pi-idle-timer
 ```
 
 Local development:
@@ -92,8 +94,8 @@ auto-discovered as an extension, so only the timer loads.
 npm test
 ```
 
-`tests/runtime-compat.test.ts` loads the extension through the pi and
-prime-agent jiti loaders with their runtime module aliases, then drives the
-full event lifecycle with a deterministic clock. Set `PI_IDLE_TIMER_PI_DIR` /
-`PI_IDLE_TIMER_PRIME_DIR` when installs use non-default paths; missing runtimes
-are skipped.
+`tests/runtime-compat.test.ts` loads the extension through each runtime's real
+jiti loader (with that runtime's module aliases) and drives the full event
+lifecycle against a mock extension API. Set `PI_IDLE_TIMER_PI_DIR` /
+`PI_IDLE_TIMER_PRIME_DIR` if your installs live elsewhere; missing runtimes are
+skipped.

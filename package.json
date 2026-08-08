@@ -1,6 +1,6 @@
 {
   "name": "pi-idle-timer",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "type": "module",
   "description": "Status-bar idle timer for pi, omp, and prime-agent: time since the agent finished its last response",
   "keywords": [

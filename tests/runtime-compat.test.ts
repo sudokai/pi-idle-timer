@@ -94,7 +94,7 @@ function makeMockPi(): MockPi {
 }
 
 // The prime-agent widget line is ANSI-styled with the theme's muted color
-// (e.g. "\x1b[38;2;161;161;170m idle 0s\x1b[39m\n") and carries a trailing
+// (e.g. "\x1b[38;2;161;161;170midle 0s\x1b[39m\n") and carries a trailing
 // newline so the TUI renders a blank row of bottom margin after the timer.
 // Assert on the text, the color envelope, and the spacing newline rather
 // than the exact string.
@@ -105,8 +105,6 @@ function assertWidgetLine(mock: MockPi, key: string, expectedText: string) {
 	assert.ok(line.startsWith("\x1b[38;"), `widget line must be ANSI-colored, got ${JSON.stringify(line)}`);
 	assert.ok(line.endsWith("\x1b[39m\n"), "widget line must reset the foreground color and end with the bottom-margin newline");
 	assert.ok(line.includes(expectedText), `widget line should contain ${JSON.stringify(expectedText)}, got ${JSON.stringify(line)}`);
-	const visible = line.replace(/\x1b\[[0-9;]*m/g, "").replace(/\n$/, "");
-	assert.equal(visible, ` ${expectedText}`, "widget line must share omp's one-space HUD gutter");
 }
 
 for (const rt of RUN_TIMES) {
